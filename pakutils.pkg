@@ -1,0 +1,98 @@
+{
+  files = {
+    [ "aliasedit.lua" ] = "local args = {...}\
+local dir = \"\"\
+local data = nil\
+local sx,sy = term.getSize()\
+local selected = 1\
+local making = false\
+local function main()\
+    while true do\
+        repeat sleep() until not making\
+        if selected ~= selected then\
+            selected = 1\
+        end\
+        term.setBackgroundColor(colors.black)\
+        term.setTextColour(colors.white)\
+        term.clear()\
+        term.setCursorPos(1,1)\
+        term.write(\"press x to exit, enter to create, bkspc to delete\")\
+        for i,v in ipairs(data.aliases) do\
+            if i == selected then\
+                term.setBackgroundColor(colors.white)\
+                term.setTextColor(colors.black)\
+            end\
+            term.setCursorPos(1,i+1)\
+            term.write(v[1]..\":\"..v[2])\
+            term.setBackgroundColor(colors.black)\
+            term.setTextColour(colors.white)\
+        end\
+        term.setCursorPos(1,sy)\
+        term.write(tostring(selected))\
+        sleep()\
+    end\
+end\
+\
+local function input()\
+    while true do\
+        local _,key,is_held = os.pullEvent(\"key\")\
+        if key == keys.x then\
+            local file = fs.open(dir,\"w\")\
+            file.write(textutils.serialise(data))\
+            file.close()\
+            sleep()\
+            break\
+        elseif key == keys.backspace then\
+            if data.aliases[selected] then\
+                table.remove(data.aliases,selected)\
+                selected = ((selected-2)%#data.aliases)+1\
+            end\
+        elseif key == keys.enter then\
+            making = true\
+            paintutils.drawFilledBox(sx/2-10,sy/2-1,sx/2+10,sy/2+1,colors.lightGray)\
+            term.setCursorPos(sx/2-9,sy/2-1)\
+            term.setBackgroundColor(colors.lightGray)\
+            term.write(\"enter name\")\
+            term.setBackgroundColor(colors.gray)\
+            paintutils.drawFilledBox(sx/2-9,sy/2,sx/2+9,sy/2,colors.gray)\
+            term.setCursorPos(sx/2-9,sy/2)\
+            local name = read()\
+            paintutils.drawFilledBox(sx/2-10,sy/2-1,sx/2+10,sy/2+1,colors.lightGray)\
+            term.setCursorPos(sx/2-9,sy/2-1)\
+            term.setBackgroundColor(colors.lightGray)\
+            term.write(\"enter path\")\
+            term.setBackgroundColor(colors.gray)\
+            paintutils.drawFilledBox(sx/2-9,sy/2,sx/2+9,sy/2,colors.gray)\
+            term.setCursorPos(sx/2-9,sy/2)\
+            local path = read()\
+            table.insert(data.aliases,{name,path})\
+            making = false\
+        elseif key == keys.up then\
+            selected = ((selected-2)%#data.aliases)+1\
+        elseif key == keys.down then\
+            selected = ((selected)%#data.aliases)+1\
+        end\
+    end\
+end\
+\
+if not args[1]:sub(1) == \"/\" then\
+    dir = args[1]\
+else\
+    dir = fs.combine(shell.dir(),args[1])\
+end\
+if fs.exists(dir) then\
+    local filer = fs.open(dir,\"r\")\
+    data = textutils.unserialise(filer.readAll())\
+    filer.close()\
+    parallel.waitForAny(main,input)\
+end\
+",
+  },
+  name = "pakutils",
+  aliases = {
+    {
+      "aliasedit",
+      "aliasedit.lua",
+    },
+  },
+}
