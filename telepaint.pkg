@@ -1,0 +1,1850 @@
+{
+  files = {
+    [ "telepaint.lua" ] = "-- The following APIs are required for this program:\
+-- pastebin get Rac6Jxjg /API/LibAppend.lua\
+-- pastebin get t2TvSiSU /API/Class.lua\
+-- pastebin get KA2dK07y /API/Events.lua\
+\
+-- Attribution: The file saving and loading functions have taken inspiration\
+-- from this program:\
+-- ? https://www.computercraft.info/forums2/index.php?/topic/27331-micropaint-experimental-painting-program-for-tiny-pixels/\
+\
+-- More info at: https://forums.computercraft.cc/index.php?topic=536.0\
+-- For some reason, images aren't showing up for me on the forum post no matter\
+-- what I do to try and update it, so here's an imgur album:\
+-- https://imgur.com/a/M9vQ2lS\
+\
+loadfile(\"/.pakages/telepaint/API/Events.lua\")()\
+loadfile(\"/.pakages/telepaint/API/bpi.lua\")()\
+\
+local termSize = vector.new(term.getSize())\
+local event = Events()\
+local image, color, menu\
+\
+image = Class(function()\
+    local ro = {}\
+\
+    local filePath\
+    local symbols = {\
+        [128] = {{1, 1}, {1, 1}, {1, 1}},\
+        [129] = {{0, 1}, {1, 1}, {1, 1}},\
+        [130] = {{1, 0}, {1, 1}, {1, 1}},\
+        [131] = {{0, 0}, {1, 1}, {1, 1}},\
+        [132] = {{1, 1}, {0, 1}, {1, 1}},\
+        [133] = {{0, 1}, {0, 1}, {1, 1}},\
+        [134] = {{1, 0}, {0, 1}, {1, 1}},\
+        [135] = {{0, 0}, {0, 1}, {1, 1}},\
+        [136] = {{1, 1}, {1, 0}, {1, 1}},\
+        [137] = {{0, 1}, {1, 0}, {1, 1}},\
+        [138] = {{1, 0}, {1, 0}, {1, 1}},\
+        [139] = {{0, 0}, {1, 0}, {1, 1}},\
+        [140] = {{1, 1}, {0, 0}, {1, 1}},\
+        [141] = {{0, 1}, {0, 0}, {1, 1}},\
+        [142] = {{1, 0}, {0, 0}, {1, 1}},\
+        [143] = {{0, 0}, {0, 0}, {1, 1}},\
+        [144] = {{1, 1}, {1, 1}, {0, 1}},\
+        [145] = {{0, 1}, {1, 1}, {0, 1}},\
+        [146] = {{1, 0}, {1, 1}, {0, 1}},\
+        [147] = {{0, 0}, {1, 1}, {0, 1}},\
+        [148] = {{1, 1}, {0, 1}, {0, 1}},\
+        [149] = {{0, 1}, {0, 1}, {0, 1}},\
+        [150] = {{1, 0}, {0, 1}, {0, 1}},\
+        [151] = {{0, 0}, {0, 1}, {0, 1}},\
+        [152] = {{1, 1}, {1, 0}, {0, 1}},\
+        [153] = {{0, 1}, {1, 0}, {0, 1}},\
+        [154] = {{1, 0}, {1, 0}, {0, 1}},\
+        [155] = {{0, 0}, {1, 0}, {0, 1}},\
+        [156] = {{1, 1}, {0, 0}, {0, 1}},\
+        [157] = {{0, 1}, {0, 0}, {0, 1}},\
+        [158] = {{1, 0}, {0, 0}, {0, 1}},\
+        [159] = {{0, 0}, {0, 0}, {0, 1}}\
+    }\
+\
+    local source = {}\
+    source.image = {}\
+    source.scroll = vector.new()\
+\
+    local teletext = {}\
+    teletext.image = {}\
+    teletext.scroll = vector.new()\
+    teletext.select = vector.new()\
+\
+    local startDrag = vector.new()\
+\
+    ro.resize = function()\
+        source.pos = vector.new(1, 1)\
+        source.size = vector.new(math.floor((termSize.x-1)*2/3), termSize.y)\
+        source.win = window.create(term.current(), 1, 1, source.size.x, source.size.y)\
+        teletext.pos = vector.new(source.size.x+2, 1)\
+        teletext.size = vector.new(math.ceil(source.size.x/2), math.ceil(source.size.y/3))\
+        teletext.win = window.create(term.current(), teletext.pos.x, 1, teletext.size.x, teletext.size.y)\
+    end\
+\
+    ro.sourcePos = function()\
+        return vector.new(source.pos.x, source.pos.y)\
+    end\
+    ro.telePos = function()\
+        return vector.new(teletext.pos.x, teletext.pos.y)\
+    end\
+    ro.sourceSize = function()\
+        return vector.new(source.size.x, source.size.y)\
+    end\
+    ro.teleSize = function()\
+        return vector.new(teletext.size.x, teletext.size.y)\
+    end\
+    ro.pixelPos = function()\
+        local x, y, z = teletext.select.x, teletext.select.y\
+        if teletext.image[y] and teletext.image[y][x] then\
+            z = teletext.image[y][x].bCol\
+        else\
+            z = \"f\"\
+        end\
+        local returnPos = vector.new(\
+            teletext.select.x - teletext.scroll.x + teletext.pos.x - 1,\
+            teletext.select.y - teletext.scroll.y,\
+            2 ^ (15 - tonumber(z, 16))\
+        )\
+        if isBetween(returnPos.x, teletext.pos.x, termSize.x, true)\
+        and isBetween(returnPos.y, 1, teletext.size.y, true) then\
+            return returnPos\
+        end\
+    end\
+\
+    local drawImage = function(i)\
+        local pos = vector.new()\
+        for y = 1, i.size.y do\
+            pos.y = i.scroll.y+y\
+            for x = 1, i.size.x do\
+                pos.x = i.scroll.x+x\
+                i.win.setCursorPos(x, y)\
+                if i.image[pos.y] and i.image[pos.y][pos.x] then\
+                    term.blit(i.image[pos.y][pos.x].text, i.image[pos.y][pos.x].tCol, i.image[pos.y][pos.x].bCol)\
+                else\
+                    term.blit(\"\\127\", \"7\", \"f\")\
+                end\
+            end\
+        end\
+    end\
+    ro.drawSource = function()\
+        drawImage(source)\
+    end\
+    ro.drawTele = function()\
+        drawImage(teletext)\
+        term.setCursorPos(teletext.pos.x-1, teletext.size.y+1)\
+        term.setBackgroundColor(colors.gray)\
+        term.setTextColor(colors.black)\
+        term.write(\"x\" .. teletext.scroll.x .. \"y\" .. teletext.scroll.y .. \"  \")\
+        term.setCursorPos(teletext.pos.x, teletext.size.y+2)\
+        term.setBackgroundColor(colors.black)\
+        local x, y, pixel = teletext.select.x, teletext.select.y\
+        if teletext.image[y] and teletext.image[y][x] then\
+            pixel = teletext.image[y][x]\
+        end\
+        if pixel then\
+            term.blit(pixel.text, pixel.tCol, pixel.bCol)\
+            term.setTextColor(colors.red)\
+            term.write('  \"\\\\' .. pixel.text:byte() .. '\"')\
+        else\
+            term.write(\"         \")\
+        end\
+    end\
+\
+    local convertPixel = function(pos)\
+        local pixelPos = vector.new(math.ceil(pos.x/2), math.ceil(pos.y/3))\
+        local pixelKeys = {text = 2, tCol = 0, bCol = 1}\
+        local symbol = {[2] = \"\\128\"}\
+        local target = {{1, 1}, {1, 1}, {1, 1}}\
+        local nilTarget = {{false, false}, {false, false}, {false, false}}\
+\
+        if source.image[pos.y+2] and source.image[pos.y+2][pos.x+1] then\
+            symbol[0] = source.image[pos.y+2][pos.x+1].bCol\
+            symbol[1] = source.image[pos.y+2][pos.x+1].bCol\
+        else\
+            symbol[0] = color.color(1)\
+            symbol[1] = color.color(1)\
+        end\
+\
+        for y = 0, 2 do\
+            for x = 0, 1 do\
+                if source.image[pos.y+y] and source.image[pos.y+y][pos.x+x] then\
+                    if symbol[0] == symbol[1]\
+                    and source.image[pos.y+y][pos.x+x].bCol ~= symbol[1] then\
+                        symbol[0] = source.image[pos.y+y][pos.x+x].bCol\
+                    end\
+                else\
+                    nilTarget[y+1][x+1] = true\
+                end\
+            end\
+        end\
+\
+        for y = 0, 2 do\
+            for x = 0, 1 do\
+                if source.image[pos.y+y] and source.image[pos.y+y][pos.x+x] then\
+                    if source.image[pos.y+y][pos.x+x].bCol == symbol[0] then\
+                        target[y+1][x+1] = 0\
+                    elseif source.image[pos.y+y][pos.x+x].bCol == symbol[1] then\
+                        target[y+1][x+1] = 1\
+                    else\
+                        target[y+1][x+1] = 1 - color.ditherMode()\
+                    end\
+                end\
+            end\
+        end\
+\
+        local targetCheck = true\
+        for a, b in pairs(symbols) do\
+            local sourceCheck = true\
+            for y = 1, 3 do\
+                for x = 1, 2 do\
+                    sourceCheck = sourceCheck and target[y][x] == b[y][x]\
+                    targetCheck = targetCheck and nilTarget[y][x]\
+                end\
+            end\
+            if targetCheck then\
+                break\
+            end\
+            if sourceCheck then\
+                symbol[2] = string.char(a)\
+                break\
+            end\
+        end\
+\
+        if targetCheck then\
+            if teletext.image[pixelPos.y] then\
+                teletext.image[pixelPos.y][pixelPos.x] = nil\
+                if textutils.serialize(teletext.image[pixelPos.y]) == \"{}\" then\
+                    teletext.image[pixelPos.y] = nil\
+                end\
+            end\
+        else\
+            teletext.image[pixelPos.y] = teletext.image[pixelPos.y] or {}\
+            teletext.image[pixelPos.y][pixelPos.x] = {\
+                text = symbol[2],\
+                tCol = symbol[0],\
+                bCol = symbol[1]\
+            }\
+        end\
+        ro.drawTele()\
+    end\
+\
+    ro.convertImage = function()\
+        for y, a in pairs(teletext.image) do\
+            for x, b in pairs(teletext.image[y]) do\
+                convertPixel(vector.new(x*2-1, y*3-2))\
+            end\
+        end\
+    end\
+\
+    local scroll = function(x, y)\
+        x, y = x or 0, y or 0\
+        source.scroll = source.scroll + vector.new(x, y)\
+        if source.scroll.x < 0 then\
+            source.scroll.x = 0\
+        end\
+        if source.scroll.y < 0 then\
+            source.scroll.y = 0\
+        end\
+        teletext.scroll = vector.new(\
+            math.floor(source.scroll.x/2),\
+            math.floor(source.scroll.y/3)\
+        )\
+        ro.drawSource()\
+        ro.drawTele()\
+    end\
+\
+    local convertSource = function(sourceX, sourceY, pixel)\
+        local charCode = pixel.text:byte()\
+        for a, b in ipairs(symbols[charCode]) do\
+            local y = sourceY+a-1\
+            source.image[y] = source.image[y] or {}\
+            for c, d in ipairs(b) do\
+                local x = sourceX+c-1\
+                source.image[y][x] = {\
+                    text = \" \",\
+                    tCol = \"0\"\
+                }\
+                if d == 0 then\
+                    source.image[y][x].bCol = pixel.tCol\
+                else\
+                    source.image[y][x].bCol = pixel.bCol\
+                end\
+            end\
+        end\
+    end\
+\
+    ro.ui = function()\
+        if OR(event[1], \"mouse_click\", \"mouse_drag\") then\
+            if event.isPressed(\"key\", keys.leftShift) or event.isPressed(\"key\", keys.leftShift) then\
+                if startDrag.x > 0 and startDrag.y > 0 then\
+                    local delta = startDrag - vector.new(event[3], event[4])\
+                    if not(event[3] <= source.size.x) then\
+                        delta.x = delta.x * 2\
+                        delta.y = delta.y * 3\
+                    end\
+                    scroll(delta.x, delta.y)\
+                end\
+                startDrag = vector.new(event[3], event[4])\
+            elseif event[3] <= source.size.x then\
+                local pos = vector.new(event[3]+source.scroll.x, event[4]+source.scroll.y)\
+                source.image[pos.y] = source.image[pos.y] or {}\
+                if event[2] == 2 then\
+                    source.image[pos.y][pos.x] = nil\
+                    if textutils.serialize(source.image[pos.y]) == \"{}\" then\
+                        source.image[pos.y] = nil\
+                    end\
+                elseif event[2] == 3 then\
+                    if source.image[pos.y] and source.image[pos.y][pos.x] then\
+                        color.color(0, source.image[pos.y][pos.x].bCol)\
+                        color.drawColor()\
+                    end\
+                else\
+                    source.image[pos.y][pos.x] = {\
+                        text = \" \",\
+                        tCol = \"0\",\
+                        bCol = color.color(event[2]-1)\
+                    }\
+                end\
+                convertPixel(vector.new(math.ceil(pos.x/2)*2-1, math.ceil(pos.y/3)*3-2))\
+                ro.drawSource()\
+            elseif event[3] >= teletext.pos.x then\
+                if event[2] == 1 then\
+                    teletext.select.x = event[3]-teletext.pos.x+teletext.scroll.x+1\
+                    teletext.select.y = event[4]+teletext.scroll.y\
+                else\
+                    teletext.select = vector.new()\
+                end\
+                ro.drawTele()\
+            end\
+        elseif event[1] == \"mouse_up\" then\
+            startDrag = vector.new()\
+        elseif event[1] == \"mouse_scroll\" then\
+            if event[3] <= source.size.x then\
+                if event.isPressed(\"key\", keys.leftShift) or event.isPressed(\"key\", keys.rightShift) then\
+                    scroll(event[2], 0)\
+                else\
+                    scroll(0, event[2])\
+                end\
+            else\
+                if event.isPressed(\"key\", keys.leftShift) or event.isPressed(\"key\", keys.rightShift) then\
+                    scroll(event[2]*2, 0)\
+                else\
+                    scroll(0, event[2]*3)\
+                end\
+            end\
+        end\
+    end\
+\
+    ro.save = function()\
+        menu.canSave(bpi.save(teletext.image, filePath)+1)\
+    end\
+\
+    local load = function()\
+        teletext.image = bpi.load(filePath)\
+        for y, a in pairs(teletext.image) do\
+            for x, b in pairs(a) do\
+                convertSource(x*2-1, y*3-2, b)\
+            end\
+        end\
+    end\
+\
+    return {\
+        ctor = function(path)\
+            if path == nil or path == \"\" then\
+                error(\"Usage: telepaint <path>\", 0)\
+            end\
+            if path:sub(1, 1) == \"/\" then\
+                filePath = path\
+            else\
+                filePath = shell.dir() .. path\
+            end\
+            if filePath:sub(filePath:len()-3, filePath:len()) ~= \".bpi\" then\
+                filePath = filePath .. \".bpi\"\
+            end\
+            if fs.exists(filePath) then\
+                load()\
+            end\
+            ro.resize()\
+        end,\
+        protected = true,\
+        readOnly = ro\
+    }\
+end)(...)\
+\
+color = Class(function()\
+    local ro = {}\
+    local pos = vector.new(image.telePos().x, image.teleSize().y+3)\
+    local col = {[0] = \"0\", [1] = \"f\"}\
+    local ditherMode = 0\
+\
+    ro.resize = function()\
+        pos = vector.new(image.telePos().x, image.teleSize().y+2)\
+    end\
+\
+    ro.pos = function()\
+        return vector.new(pos.x, pos.y)\
+    end\
+\
+    ro.color = function(n, c)\
+        for a = 0, 15 do\
+            if c == tobase(a, 16):lower() then\
+                col[n] = c\
+            end\
+        end\
+        if OR(n, 0, 1) then\
+            return col[n]\
+        else\
+            return col[0], col[1]\
+        end\
+    end\
+\
+    ro.ditherMode = function()\
+        return ditherMode\
+    end\
+\
+    ro.drawColor = function()\
+        for a = 0, 15 do\
+            term.setCursorPos(pos.x+a%8, pos.y+math.floor(a/8))\
+            term.blit(\" \", \"0\", tobase(a, 16))\
+        end\
+        term.setCursorPos(pos.x+8, pos.y)\
+        term.blit(\" \", \"0\", col[0])\
+        term.setCursorPos(pos.x+8, pos.y+1)\
+        term.blit(\" \", \"0\", col[1])\
+        term.setCursorPos(pos.x, pos.y+2)\
+        term.blit(\"Dither: \" .. ditherMode, \"00000000f\", \"ffffffff0\")\
+    end\
+\
+    ro.ui = function()\
+        if event[1] == \"mouse_click\" and isBetween(event[2], 0, 3)\
+        and isBetween(event[3], pos.x, pos.x+7, true)\
+        and isBetween(event[4], pos.y, pos.y+1, true) then\
+            col[event[2]-1] = tobase((event[3] - pos.x) + (event[4] - pos.y) * 8, 16):lower()\
+            ro.drawColor()\
+            image.convertImage()\
+        elseif event[1] == \"mouse_click\" and event[4] == pos.y+2 then\
+            ditherMode = 1 - ditherMode\
+            ro.drawColor()\
+            image.convertImage()\
+        elseif event[1] == \"char\" and OR(event[2], \"0\", \"1\") then\
+            ditherMode = tonumber(event[2])\
+            ro.drawColor()\
+            image.convertImage()\
+        end\
+    end\
+\
+    return {\
+        protected = true,\
+        readOnly = ro\
+    }\
+end)()\
+\
+menu = Class(function()\
+    local ro = {}\
+    local pos = vector.new(image.telePos().x, image.teleSize().y+6)\
+    local selectSave = true\
+    local menuOpen = false\
+    local menuText = 0\
+    local text = {\
+        [0] = {\"Ctrl or\", \"click to\"},\
+        [1] = {\"The file\", \"was saved\"},\
+        [2] = {\"Unable to\", \"save file\"},\
+        [3] = {\"File size\", \"too big!\"},\
+    }\
+\
+    ro.resize = function()\
+        pos = vector.new(image.telePos().x, image.teleSize().y+6)\
+    end\
+\
+    ro.pos = function()\
+        return vector.new(pos.x, pos.y)\
+    end\
+\
+    ro.menuOpen = function()\
+        return menuOpen\
+    end\
+\
+    ro.drawMenu = function()\
+        term.setBackgroundColor(colors.black)\
+        term.setTextColor(colors.yellow)\
+        term.setCursorPos(pos.x, pos.y)\
+        term.write(text[menuText][1])\
+        term.setCursorPos(pos.x, pos.y+1)\
+        term.write(text[menuText][2])\
+        term.setCursorPos(pos.x, pos.y+2)\
+        term.blit(\"Save Exit\", \"fffffffff\", \"8888f8888\")\
+        term.setTextColor(colors.white)\
+        term.setCursorPos(pos.x+4, pos.y+2)\
+        if menuOpen then\
+            if selectSave then term.write(\"\\17\")\
+            else term.write(\"\\16\") end\
+        else\
+            term.write(\" \")\
+        end\
+    end\
+\
+    ro.canSave = function(i)\
+        menuText = expect.range(i, 0, #text)\
+        ro.drawMenu()\
+    end\
+\
+    ro.ui = function()\
+        if event[1] == \"key\" and OR(event[2], keys.leftCtrl, keys.rightCtrl) then\
+            menuOpen = not menuOpen\
+            ro.drawMenu()\
+        elseif (event[1] == \"key\" and event[2] == keys.left)\
+        or (event[1] == \"mouse_click\" and event[2] == 1\
+        and isBetween(event[3], pos.x-1, pos.x+4) and event[4] == pos.y+2) then\
+            selectSave = true\
+            ro.drawMenu()\
+            if event[1] == \"mouse_click\" then\
+                menuOpen = true\
+                event.queueEvent(\"key\", keys.enter)\
+            end\
+        elseif (event[1] == \"key\" and event[2] == keys.right)\
+        or (event[1] == \"mouse_click\" and event[2] == 1\
+        and isBetween(event[3], pos.x+4, pos.x+9) and event[4] == pos.y+2) then\
+            selectSave = false\
+            ro.drawMenu()\
+            if event[1] == \"mouse_click\" then\
+                menuOpen = true\
+                event.queueEvent(\"key\", keys.enter)\
+            end\
+        elseif event[1] == \"key\" and OR(event[2], keys.enter, keys.numPadEnter) then\
+            if selectSave then\
+                image.save()\
+                menuOpen = false\
+                ro.drawMenu()\
+            else\
+                term.setBackgroundColor(colors.black)\
+                term.clear()\
+                term.setCursorPos(1, 1)\
+                error()\
+            end\
+        end\
+    end\
+\
+    return {\
+        protected = true,\
+        readOnly = ro\
+    }\
+end)()\
+\
+local drawAll = function()\
+    term.setBackgroundColor(colors.black)\
+    term.clear()\
+    term.setCursorPos(1, 1)\
+    if termSize.x < 26 or termSize.y < 12 then\
+        error(\"Minimum term size is 26x12. Actual term size is \" .. termSize.x .. \"x\" .. termSize.y, 0)\
+    end\
+    paintutils.drawFilledBox(1, 1, image.sourceSize().x+1, termSize.y, colors.gray)\
+    paintutils.drawFilledBox(image.telePos().x, 1, termSize.x, image.teleSize().y+1, colors.gray)\
+    image.drawSource()\
+    image.drawTele()\
+    color.drawColor()\
+    menu.drawMenu()\
+end\
+\
+drawAll()\
+while true do\
+    local pixelPos = image.pixelPos()\
+    if pixelPos then\
+        term.setCursorPos(pixelPos.x, pixelPos.y)\
+        term.setTextColor(pixelPos.z)\
+        term.setCursorBlink(true)\
+    end\
+    event.getEvent()\
+    term.setCursorBlink(false)\
+    if event[1] == \"key\" and OR(event[2], keys.leftCtrl, keys.rightCtrl)\
+    or (event[1] == \"mouse_click\" and event[2] == 1\
+    and isBetween(event[3], menu.pos().x, menu.pos().x+8, true)\
+    and event[4] == menu.pos().y+2) or menu.menuOpen() then\
+        menu.ui()\
+\
+    elseif (event[1] == \"mouse_click\" and isBetween(event[2], 0, 3)\
+    and isBetween(event[3], color.pos().x, color.pos().x+8, true)\
+    and isBetween(event[4], color.pos().y, color.pos().y+3, true))\
+    or (event[1] == \"char\" and OR(event[2], \"0\", \"1\")) then\
+        color.ui()\
+\
+    elseif (OR(event[1], \"mouse_click\", \"mouse_drag\", \"mouse_scroll\")\
+    and (event[3] <= image.sourceSize().x\
+    or (event[3] >= image.telePos().x and event[4] <= image.teleSize().y)))\
+    or event[1] == \"mouse_up\" then\
+        image.ui()\
+\
+    elseif event[1] == \"term_resize\" then\
+        termSize = vector.new(term.getSize())\
+        image.resize()\
+        color.resize()\
+        menu.resize()\
+        drawAll()\
+    end\
+end\
+\
+--[[ Changelog\
+2024/05/14:\
+? Changed 'doFile' to 'require'.\
+? Added API for bpi. Files will now be saved and loaded using this API.\
+? Added a link to an imgur album with all the screenshots since they don't seem\
+  to want to show up in the forum post for some reason.\
+\
+2023/07/10:\
+? One more revision to the save/load functions, hopeully the last for a while.\
+  The .bpi file size has been reduced once again.\
+? The length of the x and y coordinates are now only 1 byte collectively.\
+? 4 bits for length of x, and another 4 bits for the length of y.\
+? Posted to Pastebin and the computercraft.cc forums.\
+\
+2023/07/09:\
+? Revised the save and load functions again. Files will no longer be limitted to\
+  a maximum size of 256 KB.\
+  ? An extra byte will be used to tell how many bytes the x and y coordinates\
+    are, with the max number of bytes per coordinate being 32 (256 bits).\
+  ? Coordinates whose values are less than 256 will only be one byte in the\
+    file, less than 65536 will be two bytes, and so on.\
+  ? This also means that the file size will compound based on how big the image\
+    is. I still can't imagine anyone making images that big, but at least now\
+    that silly file size restriction has been removed while still keeping the\
+    file sizes relatively low.\
+? The main menu will now tell you if the file is too big for the remaining space\
+  in the computer. It will also tell you this if a coordinate is more than 256\
+  bits (which shouldn't even be possible).\
+? The main menu will tell you if it was unable to open the file for saving for\
+  any other reason.\
+? The main menu will tell you if the file was saved successfuly.\
+? The restriction to scrolling has also been removed.\
+? The scroll position is now being printed on the border.\
+? The colors have been moved around to make room for a new feature.\
+? Left clicking on the output image will select a pixel. The pixel will be\
+  highlighted with the shell cursor, and the pixel along with its character code\
+  will be displayed at the top of the menu window.\
+? Right or middle clicking on the output image will deselect the pixel.\
+\
+2023/07/08:\
+? Renamed the program to \"telepaint.lua\" so as to not conflict with the name\
+  of the program credited in the attribution.\
+? All variables referencing the micro image have been renamed to 'teletext' or\
+  'tele*'.\
+? Changed right click to erase and middle click to pick a color on the canvas.\
+? The second selected color is now only used for converting transparent pixels to\
+  the background color of the output image.\
+? The outputs of the 'tobase' function are now being converted to lower case to\
+  prevent errors with reading the text and background colors.\
+? Revised the save and load functions to reduce the file size.\
+? The output image size is now limited to 256x256 characters, which is 512x768\
+  teletext pixels. This sets the maximum file size to 256 KB which is an eighth\
+  of the default capacity of a CC computer. That much shouldn't even be needed\
+  for ComputerCraft, but this way the entire byte for each coordinate gets used.\
+? Fixed the dithering effect being applied to pixels with the text and\
+  background colors. The effect should only be applied to additional colors.\
+\
+2023/07/07:\
+? Changing the selected colors or the dithering mode will update the entire\
+  micro image with the new settings.\
+? Using the scroll wheel while the mouse is over the source or micro image will\
+  scroll the image vertically.\
+? Holding Shift while scrolling will scroll horizontally.\
+? Scrolling over the micro image will have a vertical magnitude of 3 and a\
+  horizontal magnitude of 2.\
+? Holding Shift while click anddragging the mouse on either the source or micro\
+  image will pan the image by their respective magnitude.\
+? Files can now be saved using the save button. Keyboard and mouse both work.\
+? Loading a file works the same way as the built in paint program.\
+  Usage: micropaint <path>\
+\
+2023/07/06:\
+? \"Pixels\" can now be painted to the source image.\
+? The source image will immediately be converted to the micro image when\
+  painting.\
+? The primary color is the color of the bottom-right most pixel in the micro\
+  pixel.\
+? The secondary color is the first color in the micro pixel (going from top left\
+  to bottom right) that is not the primary color.\
+? When the dithering mode is 0, any colors that are not the primary or secondary\
+  are converted to the primary.\
+? When the dithering mode is 1, any colors that are not the primary or secondary\
+  are converted to the secondary.\
+? If the secondary pixels are transparent, it will use the primary color for\
+  those pixels.\
+? If the primary pixel is transparent, it will use the color selected for right\
+  click as the primary color.\
+\
+2023/07/05:\
+? Created UI with all of the menu controls being functional.\
+? The window to the left will be the source image, containing ComputerCraft\
+  \"pixels\".\
+? The window to the top right will be the micro image, containing the symbols\
+  converted from the source image.\
+? Transparency is represented by the character \"\\127\" with a black background\
+  and gray text color.\
+? The window to the bottom right contains all of the menu options.\
+? Clicking the color pixels with left or right click changes the selected\
+  color for left or right click.\
+? Clicking \"Dither: #\" toggles the dithering mode.\
+? Clicking the \"Save\" button initiates the save function. The actual save\
+  function has not been implemented yet.\
+? Clicking the \"Exit\" button exits the program.\
+? Pressing Ctrl toggles an arrow cursor pointing at the \"Save\" or \"Exit\"\
+  buttons. Left or right arrow keys change what it points at, and Enter\
+  initiates the button's action.\
+\
+2023/07/04:\
+? Made prototype for converting ComputerCraft \"pixels\" to the pixel symbols\
+  of character codes between 128 and 159.\
+]]",
+    API = {
+      [ "bpi.lua" ] = "--[[ This API is for loading and saving bpi files, which are my solution for\
+ComputerCraft image files with text, text color, and background color.\
+\"BPI\" stands for Better Paint Image.\
+\
+Use 'bpi.load' with a file path to load an image.\
+The image table is formated as follows:\
+{\
+  [y] = { -- Y Coordinate\
+    [x] = { -- X Coordinate\
+      text = \"c\", -- Character\
+      tCol = \"0\", -- Text Color\
+      bCol = \"f\"  -- Background Color\
+    }\
+  }\
+}\
+The X and Y coordinates should be positive numbers greater than zero and less\
+than or equal to 2^128.\
+\
+Use 'bpi.save' with an image table and a file path to save a bpi image.\
+Each pixel in the save file is formatted as follows:\
+\
+X Length = 4 bits for the length in bytes of the X Coordinate.\
+Y Length = 4 bits for the legnth in bytes of the Y Coordinate.\
+X Coordinate = X Length bytes.\
+Y Coordinate = Y Length bytes.\
+Text Code = 1 byte for the text character code.\
+Text Color = 4 bits.\
+Background Color = 4 bits.\
+\
+Each pixel may be between 5 and 35 total bytes depending on the size of the\
+coordinates. The pixels are not in any specific order. Empty spaces between\
+pixels may be treated as transparent pixels.\
+\
+The Class API is required to run this program.\
+In the ComputerCraft terminal, run the following commands:\
+  Run 'pastebin get t2TvSiSU /API/Class.lua'\
+  Run 'pastebin get sSSyDAFm /API/bpi.lua'\
+\
+Check out this post on the ComputerCraft forums to see how this file format can\
+can be used:\
+https://forums.computercraft.cc/index.php?topic=536.msg1750\
+]]\
+\
+loadfile(\"/.pakages/telepaint/API/Class.lua\")()\
+\
+bpi = Class(function()\
+local ro = {}\
+\
+ro.save = function(image, path)\
+  local bin = {}\
+  local canSave = true\
+\
+  local addByte = function(n)\
+    table.insert(bin, #bin+1, n)\
+  end\
+\
+  local bitShift = function(n)\
+    local b = {}\
+    repeat\
+      table.insert(b, #b+1, bit32.band(n, 0xff))\
+      n = bit32.rshift(n, 8)\
+    until n == 0\
+    canSave = canSave and #b-1 <= 0xf\
+    -- Can't save if the X or Y coordinate is more than 16 bytes (128 bits)\
+    return b\
+  end\
+\
+  for y, a in pairs(image) do\
+    for x, b in pairs(a) do\
+      local coords = {bitShift(x-1), bitShift(y-1)}\
+      addByte((#coords[2]-1) + bit32.lshift(#coords[1]-1, 4))\
+\
+      for i, t in ipairs(coords) do\
+        for j, v in ipairs(t) do\
+          addByte(v)\
+        end\
+      end\
+\
+      addByte(b.text:byte())\
+      addByte(tonumber(b.bCol, 16) + bit32.lshift(tonumber(b.tCol, 16), 4))\
+    end\
+  end\
+\
+  canSave = canSave and #bin <= fs.getFreeSpace(shell.dir())\
+  if canSave then\
+    if path:sub(#path-3) ~= \".bpi\" then\
+      path = path .. \".bpi\"\
+    end\
+    local f = fs.open(path, \"wb\")\
+    if f then\
+      for i, v in ipairs(bin) do\
+        f.write(v)\
+      end\
+      f.close()\
+      return 0 -- Save successful\
+    else return 1 end -- Unknown error\
+  else return 2 end -- Image is too big/Out of space\
+end\
+\
+ro.load = function(path)\
+  if path:sub(#path-3) ~= \".bpi\" then\
+    path = path .. \".bpi\"\
+  end\
+  if fs.exists(path) then\
+    local bin = {}\
+    local image = {}\
+\
+    local f = fs.open(path, \"rb\")\
+    repeat\
+      local line = f.read()\
+      table.insert(bin, #bin+1, line)\
+    until line == nil\
+    f.close()\
+\
+    local removeByte = function()\
+      local n = bin[1]\
+      table.remove(bin, 1)\
+      return n\
+    end\
+\
+    local bitShift = function(l)\
+      local n = 0\
+      for i = 0, l do\
+        n = n + bit32.lshift(removeByte(), i*8)\
+      end\
+      return n\
+    end\
+\
+    while #bin > 0 do\
+      local coordLength = removeByte()\
+      local teleX = bitShift(bit32.rshift(bit32.band(coordLength, 0xf0), 4))+1\
+      local teleY = bitShift(bit32.band(coordLength, 0x0f))+1\
+      image[teleY] = image[teleY] or {}\
+      image[teleY][teleX] = {}\
+      image[teleY][teleX].text = string.char(removeByte())\
+      local c = string.format(\"%02x\", removeByte())\
+      image[teleY][teleX].tCol = c:sub(1, 1)\
+      image[teleY][teleX].bCol = c:sub(2, 2)\
+    end\
+    return image\
+  else\
+    error(\"File not found\", 2)\
+  end\
+end\
+\
+return {\
+  protected = true,\
+  readOnly = ro\
+}\
+end)()",
+      [ "Events.lua" ] = "-- This is an event handler for ComputerCraft. It takes event arguments returned\
+--   by os.pullEvent or os.pullEventRaw and processes them into an object with\
+--   methods for better accessibility and usability.\
+\
+-- Key presses and mouse clicks are also tracked so that it's easier to tell if\
+--   a button is currently pressed or not. This is useful for multi-key events\
+--   such as pressing Ctrl+C, for example.\
+\
+-- You can get this program from https://pastebin.com/KA2dK07y\
+-- This program requires two additional files to work. To get this program\
+--   run the following commands:\
+--     pastebin get Rac6Jxjg \"/API/LibAppend.lua\"\
+--     pastebin get t2TvSiSU \"/API/Class.lua\"\
+--     pastebin get KA2dK07y \"/API/events.lua\"\
+\
+-- Make sure that all of these files are saved to \"/API\" in the root directory\
+--   in order for all programs that use this one to work properly.\
+\
+-- Add this to your program using 'dofile(\"/API/events.lua\")'' and call 'event =\
+--   Events()' to create an events object.\
+\
+-- Call events.getEvent() for os.pullEvent(), and events.getRawEvent() for\
+--   os.pullEventRaw() and events.queueEvent() for os.queueEvent().\
+\
+-- Event parameters are automatically stored in events[n]. All you have to do is\
+--   call events[1] for the event name, events[2] for its first parameter, etc.\
+\
+-- Call events.isPressed() to check if a key or mouse click is currently being\
+--   pressed. Scroll down to learn the function arguments.\
+\
+-- Call events.mousePos() to get the position of a mouse button if it is\
+--   currently being pressed. Pass the mouse button id as this function's\
+--   argument.\
+\
+dofile(\"/.pakages/telepaint/API/LibAppend.lua\")\
+dofile(\"/.pakages/telepaint/API/Class.lua\")\
+\
+Events = Class(function()\
+local readOnly = {}\
+local event = {}\
+local eventSize = 0\
+local pressed = {key = {}, click = {}}\
+local mousePos = {\
+    [1] = vector.new(0, 0),\
+    [2] = vector.new(0, 0),\
+    [3] = vector.new(0, 0),\
+    [\"left\"] = vector.new(0, 0),\
+    [\"right\"] = vector.new(0, 0),\
+    [\"middle\"] = vector.new(0, 0)\
+}\
+\
+local clearEvents = function()\
+    for a = 1, eventSize do\
+        readOnly[a] = nil\
+    end\
+    eventSize = 0\
+end\
+local refreshEvents = function()\
+    clearEvents()\
+    for a, b in ipairs(event) do\
+        readOnly[a] = b\
+    end\
+    eventSize = #event\
+end\
+local pressButton = function(t, k, x, y)\
+    local click = {[1] = \"left\", [2] = \"right\", [3] = \"middle\"}\
+    if t == \"mouse_click\" then\
+        pressed.click[k] = true\
+        pressed.click[click[k]] = true\
+        mousePos[k] = vector.new(x, y)\
+        mousePos[click[k]] = vector.new(x, y)\
+    elseif t == \"mouse_up\" then\
+        pressed.click[k] = false\
+        pressed.click[click[k]] = false\
+        mousePos[k] = vector.new(0, 0)\
+        mousePos[click[k]] = vector.new(0, 0)\
+    elseif t == \"key\" then\
+        pressed.key[k] = true\
+        pressed.key[keys.getName(k)] = true\
+    elseif t == \"key_up\" then\
+        pressed.key[k] = false\
+        pressed.key[keys.getName(k)] = false\
+    end\
+    pressed.key.shift = pressed.key.leftShift or pressed.key.rightShift\
+    pressed.key.ctrl = pressed.key.leftCtrl or pressed.key.rightCtrl\
+    pressed.key.alt = pressed.key.leftAlt or pressed.key.rightAlt\
+    pressed.key.enterKey = pressed.key.enter or pressed.key.numPadEnter\
+end\
+\
+-- Call events[n] to get the nth parameter in the event.\
+readOnly.getEvent = function(...)\
+    event = {os.pullEvent(...)}\
+    refreshEvents()\
+    pressButton(event[1], event[2], event[3], event[4])\
+    return event\
+end\
+readOnly.getRawEvent = function(...)\
+    event = {os.pullEventRaw(...)}\
+    refreshEvents()\
+    pressButton(event[1], event[2], event[3], event[4])\
+    return event\
+end\
+readOnly.queueEvent = function(...)\
+    os.queueEvent(...)\
+end\
+\
+-- t = \"key\" or \"click\"\
+-- k = the mouse/key id or name.\
+-- Example 1: events.isPressed(\"key\", keys.leftShift) -> true or false if left shift is pressed.\
+-- Example 2: events.isPressed(\"key\", \"rightShift\") -> true or false if right shift is pressed.\
+-- Example 3: events.isPressed(\"click\", 1) -> true or false if left mouse click is pressed.\
+-- Example 4: events.isPressed(\"click\", \"right\") -> true or false if right mouse click is pressed.\
+-- Look up the keys API for specific key names and id numbers.\
+readOnly.isPressed = function(t, k)\
+    if not OR(t, \"click\", \"key\") then\
+        error('bad argument #1 (expected \"click\" or \"key\")', 2)\
+    end\
+    if pressed[t][k] == nil then return false\
+    else return pressed[t][k] end\
+end\
+\
+-- If specified mouse button is pressed, returns the x,y coordinate, else returns nil.\
+readOnly.mousePos = function(k)\
+    if pressed.click[k] then return mousePos[k].x, mousePos[k].y\
+    else return nil end\
+end\
+\
+return {\
+    protected = true,\
+    readOnly = readOnly,\
+    meta = {\
+        __len = function() return #event end\
+    }\
+}\
+end)\
+\
+--[[ Changelog\
+2024/01/03:\
+? Added general identifiers for keys that have duplicates on the keyboard:\
+  'shift', 'ctrl', 'alt', and 'enterkey'\
+\
+2023/12/03:\
+? Removed 'sleep' and 'sleepRaw' due to redundancy. They worked perfectly for\
+  one specific situation, but they didn't work as intended for anything else.\
+\
+2023/12/02:\
+? 'sleep' and 'sleepRaw' now return the timer value.\
+\
+2023/12/01:\
+? Added comment to 'isPressed' for checking mouse clicks with strings.\
+? Added additional return values for 'isPressed' and 'mousePos' if the values\
+  being checked are nil.\
+\
+2023/07/08:\
+? Removed event.eventIs() due to lack of use as well as it not always working as\
+  intended. Normal comparison operators are more practical, as well as the OR()\
+  and isBetween() functions from LibAppend.\
+? Changed comments at the top from saying to use 'require' to saying to use\
+  'dofile', which I forgot to do two updates ago.\
+\
+2023/05/08:\
+? Added 'sleep' and 'sleepRaw'. Read the comments above the methods for info.\
+\
+2023/05/06:\
+? Changed 'require' to 'dofile' which does the same thing but makes this API\
+  backwards compatible.\
+? 'mousePos' now uses the vector API from 'LibAppend'.\
+\
+2023/03/09:\
+? Changed events class to a class header to reflect the changes made to\
+  \"Class.lua\".\
+\
+2023/02/27:\
+? Changed 'protected' to 'readOnly' to reflect the changes made to \"Class.lua\".\
+\
+2023/02/20:\
+? protected.isPressed() - swapped the 'or' comparison with the 'OR()' function\
+  from LibAppend.\
+\
+2023/02/08:\
+? Version 2.0. The program has been completely revamped.\
+? Instead of setting a table with keys based on specific events, which was not\
+  actually that helpful, this helps streamline event processing.\
+? events.listen() has been replaced with events.getEvent().\
+? events.rawListen() has been replaced with events.getRawEvent().\
+? events.queue() has been replaced with events.queueEvent().\
+? Call events[n] to get the nth parameter of the event.\
+? events.eventIs() has been added in an attempt to help greatly reduce the amount\
+  of code needed for conditional statements revolving specifically around event\
+  parameters.\
+? Mouse button and key presses are now being tracked. Use events.isPressed() to\
+  check if a button is currently being pressed.\
+? Use events.mousePos() to get the current position of the specified mouse button,\
+  or nil if the specified mouse button is not pressed.\
+\
+2022/06/29:\
+? Moved all functions into a table.\
+\
+2022/06/26:\
+? Added eventQueue() to handle queuing events with os.queueEvent().\
+]]",
+      [ "Class.lua" ] = "-- This is a script that attempts emulate the creation of class based objects\
+--   used within OOP languages.\
+-- C++ is the inspiration for the design of this script.\
+-- You can get this program from https://pastebin.com/t2TvSiSU\
+-- If you are running this in ComputerCraft, use the following command to\
+--   download it: pastebin get t2TvSiSU \"/API/Class.lua\"\
+-- In ComputerCraft, this file should be in \"/API/\" in the root directory to\
+--   ensure all programs that use this script function properly.\
+-- An in depth guide to this script can be found here:\
+--   https://pastebin.com/upj3fgyZ\
+\
+-- Sets a protected metatable.\
+readOnly = function(t, meta, ro)\
+  meta = meta or {}\
+  meta.__pairs = meta.__pairs or function()\
+    local keys = {}\
+    for _, o in pairs({t, ro}) do\
+      for k, v in next, o do\
+        keys[k] = v\
+      end\
+    end\
+    return next, keys\
+  end\
+  meta.__index = ro or meta.__index\
+  meta.__metatable = meta.__metatable or false\
+  return setmetatable(t, meta)\
+end\
+\
+-- Checks if values are or are NOT of specified types.\
+typeCheck = function(member, memberName, types, level, invert)\
+  local err = true\
+  level = level or 3\
+  local errorMessage = \"expected '\"..memberName..\"' to be type \"\
+\
+  for a, b in ipairs(types) do\
+    if a > 1 then errorMessage = errorMessage..\" or \" end\
+    errorMessage = errorMessage..b\
+    if (not invert and type(member) == b) or (invert and not type(member) == b) then\
+      err = false\
+      break\
+    end\
+  end\
+  errorMessage = errorMessage..\", got \"..type(member)\
+  if err then error(errorMessage, level) end\
+end\
+\
+-- Object Constructor.\
+Object = function(class, ...)\
+  typeCheck(class, \"class\", {\"table\"})\
+  typeCheck(class.ctor, \"ctor\", {\"function\", \"nil\"})\
+  typeCheck(class.protected, \"protected\", {\"boolean\", \"nil\"})\
+  typeCheck(class.public, \"public\", {\"table\", \"nil\"})\
+  typeCheck(class.readOnly, \"readOnly\", {\"table\", \"nil\"})\
+  typeCheck(class.meta, \"meta\", {\"table\", \"nil\"})\
+\
+  class.public = class.public or {}\
+  class.meta = class.meta or {}\
+\
+  class.meta.__len = class.meta.__len or function()\
+    local size = 0\
+    for k, v in ipairs(class.public) do\
+      size = size + 1\
+    end\
+    return size\
+  end\
+  if class.ctor == nil then\
+    class.meta.__call = class.meta.__call or function() end\
+  else\
+    class.meta.__call = function(self, ...)\
+      return class.ctor(...)\
+    end\
+  end\
+  if class.protected then\
+    class.meta.__newindex = function() error(\"attempt to update a protected object\", 2) end\
+  end\
+\
+  class.meta.__call(nil, ...)\
+  local obj = readOnly(class.public, class.meta, class.readOnly)\
+  return obj\
+end\
+  \
+  -- Class Constructor.\
+Class = function(header)\
+  typeCheck(header, \"header\", {\"function\"})\
+  local h = header()\
+  typeCheck(h, \"head\", {\"table\"})\
+  typeCheck(h.ctor, \"ctor\", {\"function\", \"nil\"})\
+  typeCheck(h.protected, \"protected\", {\"boolean\", \"nil\"})\
+  typeCheck(h.public, \"public\", {\"table\", \"nil\"})\
+  typeCheck(h.readOnly, \"readOnly\", {\"table\", \"nil\"})\
+  typeCheck(h.meta, \"meta\", {\"table\", \"nil\"})\
+\
+  return readOnly({}, {\
+      __index = {h = header},\
+      __call = function(self, ...) return Object(header(...), ...) end,\
+      __newindex = function() error(\"attempt to update a class, access denied\", 3) end\
+  })\
+end\
+\
+--[[ Changelog:\
+The changelog has been moved to https://pastebin.com/PTWQcPsP\
+]]",
+      [ "LibAppend.lua" ] = "-- This is an API to add much needed functions to the global libraries in\
+--   ComputerCraft Lua. This code will only work in ComputerCraft.\
+-- To get this program, run the following command:\
+--   pastebin get Rac6Jxjg \"/API/LibAppend.lua\"\
+-- This file must be saved in \"/API/\" in order for programs that use it to\
+--   function properly.\
+-- Add it to your program by including 'dofile(\"/API/LibAppend.lua\")' or\
+--   'require(\"/API/LibAppend\")' at the top of your code.\
+\
+-- This is so 'require' can be used, even if APIs are loaded with 'dofile'.\
+require = dofile(\"/rom/modules/main/cc/require.lua\").make(\
+    setmetatable({}, {__index = _ENV}),\
+    \"/\"\
+)\
+\
+-- This loads the expect module into your program. I don't know why this isn't\
+--   loaded into the global table by default.\
+-- expect.expect(arg, value, ...) -> Throws an error if the 'value' isn't any of\
+--   the given types. You can enter multiple type arguments after 'value'.\
+-- expect.field(table, index, ...) -> Throws an error a property of a table\
+--   isn't any of the given types. 'index' must be a key string and not an index\
+--   number. You can enter multiple type arguments after 'index'.\
+-- expect.range(num, min, max) -> Thrown an error if a number is not between two\
+--   values, inclusive.\
+expect = require(\"cc.expect\")\
+\
+-- Gets the \"name\" of the specified color.\
+colors.name = function(color)\
+    local colorList = {\
+        [\"0\"] = \"white\",\
+        [\"1\"] = \"orange\",\
+        [\"2\"] = \"magenta\",\
+        [\"3\"] = \"lightBlue\",\
+        [\"4\"] = \"yellow\",\
+        [\"5\"] = \"lime\",\
+        [\"6\"] = \"pink\",\
+        [\"7\"] = \"gray\",\
+        [\"8\"] = \"lightGray\",\
+        [\"9\"] = \"cyan\",\
+        [\"a\"] = \"purple\",\
+        [\"b\"] = \"blue\",\
+        [\"c\"] = \"brown\",\
+        [\"d\"] = \"green\",\
+        [\"e\"] = \"red\",\
+        [\"f\"] = \"black\"\
+    }\
+    return colorList[colors.toBlit(expect.expect(1, color, \"number\"))]\
+end\
+\
+-- Non-American version of colors.name().\
+colours.name = function(colour)\
+    local name = colors.name(colour)\
+    if name == \"gray\" or name == \"lightGray\" then name = name:gsub(\"ray\", \"rey\") end\
+    return name\
+end\
+\
+math.round = function(n)\
+    return math.floor(n+0.5)\
+end\
+\
+-- Correctly capitalize the first letter in each sentence in a string.\
+string.cap = function(s)\
+    for a = 1, s:len() do\
+        if a == 1 or s:sub(a-2, a-1) == \". \" or s:sub(a-2, a-1) == \"? \" or s:sub(a-2, a-1) == \"! \" then\
+            s = s:sub(1, a-1)..s:sub(a, a):upper()..s:sub(a+1, s:len())\
+        end\
+    end\
+    return s\
+end\
+\
+-- Capitalizes the first letter in all words.\
+string.capAll = function(s)\
+    for a = 1, s:len() do\
+        if a == 1 or s:sub(a-1, a-1) == \" \" then\
+            s = s:sub(1, a-1)..s:sub(a, a):upper()..s:sub(a+1, s:len())\
+        end\
+    end\
+    return s\
+end\
+\
+string.concat = function(...)\
+    str = \"\"\
+    for _, v in ipairs({...}) do\
+        str = str .. tostring(v)\
+    end\
+    return str\
+end\
+\
+-- Easily add padding to a string.\
+-- 'str' is the string to add padding to.\
+-- 'pad' is the string to use as padding.\
+-- 's' adds padding to the start of str if the length of str is less than s.\
+-- 'e' adds padding to the end of str if the length of str is less than e after adding s padding.\
+string.pad = function(str, pad, s, e)\
+    str, pad = tostring(str), tostring(pad)\
+    s, e = tonumber(s) or 0, tonumber(e) or 0\
+    str = pad:rep(s-str:len()) .. str\
+    str = str .. pad:rep(e-str:len())\
+    return str\
+end\
+\
+-- A single function option for swapping the values of two elements in a table.\
+-- 't' is the table you want to change.\
+-- 'i1' and 'i2' are the keys for the elements being swapped.\
+-- The value of 't[i1]' is set to 't[i2]'.\
+-- The value of 't[i2]' is set to 't[i1]'.\
+table.swap = function(t, i1, i2)\
+    expect.expect(1, t, \"table\")\
+    expect.expect(2, i1, \"number\", \"string\")\
+    expect.expect(3, i2, \"number\", \"string\")\
+    e = t[i1]\
+    t[i1] = t[i2]\
+    t[i2] = e\
+end\
+\
+-- Moves elements up or down through an ordered list.\
+-- 't' is the table you want to change.\
+-- 'i' is the index of the element being moved.\
+-- 'n' is how many places the element will move.\
+-- Only index numbers can be used for i. Strings will not work.\
+-- To move elements with strings as keys, use 'table.swap'.\
+table.shift = function(t, i, n)\
+    expect.expect(1, t, \"table\")\
+    expect.expect(2, i, \"number\")\
+    expect.expect(3, n, \"number\")\
+    repeat\
+        if n < 0 then\
+            table.swap(t, i, i-1)\
+            i = i - 1\
+        elseif n > 0 then\
+            table.swap(t, i, i+1)\
+            i = i + 1\
+        end\
+    until i == n\
+    return i\
+end\
+\
+-- A combination of term.blit and print.\
+term.printBlit = function(s, t, b)\
+    expect.expect(1, s, \"string\")\
+    expect.expect(2, t, \"string\")\
+    expect.expect(3, b, \"string\")\
+    if s:len() ~= t:len() or s:len() ~= b:len() then\
+        error(\"Arguments must be the same length\", 2)\
+    end\
+    term.blit(s, t, b)\
+    print()\
+end\
+\
+-- A combination of texutils.slowWrite and term.blit.\
+textutils.slowBlit = function(s, t, b, d)\
+    d = d or 20\
+    expect.expect(1, s, \"string\")\
+    expect.expect(2, t, \"string\")\
+    expect.expect(3, b, \"string\")\
+    if string.len(s) ~= string.len(t) or string.len(s) ~= string.len(b) or string.len(t) ~= string.len(b) then\
+        error(\"Arguments #1-3 must be the same length (\"..string.len(s)..\", \"..string.len(t)..\", \"..string.len(b)..\")\", 2)\
+    end\
+    expect.expect(4, d, \"number\")\
+    if d <= 0 then\
+        error(\"Text speed must be greater than 0\", 2)\
+    end\
+\
+    local lastSpace = 0\
+    local lastNL = 0\
+    local xPos, yPos = term.getCursorPos()\
+    local xSize, ySize = term.getSize()\
+    for i = 1, s:len() do\
+        if s:sub(i, i) == \" \" then\
+            lastSpace = i\
+        end\
+        if s:sub(i, i) == \"\\n\" then\
+            lastNL = i\
+            lastSpace = i\
+        end\
+        if xPos+i-lastNL-1 > xSize then\
+            s = s:sub(1, lastSpace-1)..\"\\n\"..s:sub(lastSpace+1, s:len())\
+            lastNL = lastSpace\
+            xPos = 1\
+        end\
+    end\
+\
+    local currentTextColor = term.getTextColor()\
+    local currentBackgroundColor = term.getBackgroundColor()\
+\
+    for i = 1, s:len() do\
+        sleep(1/d)\
+        term.setTextColor(2^tonumber(t:sub(i, i), 16))\
+        term.setBackgroundColor(2^tonumber(b:sub(i, i), 16))\
+        write(s:sub(i, i))\
+    end\
+    term.setTextColor(currentTextColor)\
+    term.setBackgroundColor(currentBackgroundColor)\
+end\
+\
+-- 'buffer = doubleBuffer.new()' creates double frame buffers and redirects the\
+--   term to the first buffer.\
+-- 'buffer.swap()' redirects the from the current buffer to the other.\
+-- 'buffer.resize()' resizes the buffers if the parent term size has changed.\
+-- 'buffer.parent()' returns the parent term.\
+-- 'buffer.reset()' redirects back to the parent term.\
+doubleBuffer = {}\
+doubleBuffer.new = function(parent, ...)\
+    local wins = {...}\
+    local oldTerm = expect.expect(1, parent, \"table\", \"nil\") or term.current()\
+    for k, v in pairs(term.native()) do\
+        if type(k) == \"string\" and type(v) == \"function\"\
+        and type(oldTerm[k]) ~= \"function\" then\
+            error(\"Redirect object is missing method \" .. k .. \".\", 2)\
+        end\
+    end\
+    local buffer = {\
+        [0] = window.create(oldTerm, 1, 1, 1, 1),\
+        [1] = window.create(oldTerm, 1, 1, 1, 1)\
+    }\
+    local win = 1\
+\
+    local winRepos = function(p)\
+      for i, v in ipairs(wins) do\
+        local pos = vector.new(v.getPosition())\
+        local size = vector.new(v.getSize())\
+        v.reposition(pos.x, pos.y, size.x, size.y, p)\
+      end\
+    end\
+\
+    swap = function()\
+        buffer[win].setVisible(true)\
+        win = 1 - win\
+        buffer[win].setVisible(false)\
+        winRepos(buffer[win])\
+        return term.redirect(buffer[win])\
+    end\
+\
+    resize = function()\
+        local xSize, ySize = term.getSize()\
+        buffer[0].reposition(1, 1, xSize, ySize)\
+        buffer[1].reposition(1, 1, xSize, ySize)\
+        return xSize, ySize\
+    end\
+\
+    parent = function()\
+        return oldTerm\
+    end\
+\
+    reset = function()\
+        winRepos(oldTerm)\
+        return term.redirect(oldTerm)\
+    end\
+\
+    resize()\
+    swap()\
+    return {\
+        swap = swap,\
+        resize = resize,\
+        parent = parent,\
+        reset = reset\
+    }\
+end\
+\
+-- Converts decimial number to another base (binary, hexadecimal, etc.)\
+tobase = function(n, b)\
+    local code = \"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ\" -- 2 - 36 values per digit\
+    local v = \"\"\
+    expect.expect(1, n, \"number\")\
+    expect.expect(2, b, \"number\")\
+    expect.range(b, 2, 36)\
+    repeat\
+        v = code:sub(n%b+1, n%b+1) .. v\
+        n = math.floor(n/b)\
+    until n == 0\
+    return v\
+end\
+\
+-- This is the vector api completely rewritten to include 2D and 4D vectors, as\
+-- well as error messages that make it easier to debug.\
+-- A 2-dimensional vector with 'x' and 'y' values.\
+-- A 3-dimensional vector with 'x', 'y' and 'z' values.\
+-- A 4-dimensional vector with 'x', 'y', 'z', and 'w' values.\
+vector = (function()\
+    local vect = {}\
+    local vectors = {[2] = {}, [3] = {}, [4] = {}}\
+    local checkValue = {}\
+\
+    local err = function(v, t, e)\
+        if type(v) ~= t then error(e, 5) end\
+    end\
+    local checkVector = function(o, d)\
+        err(o, \"table\", \"expected second operand to be a table (\" .. d .. \"D vector), got \" .. type(o))\
+    end\
+    local checkField = function(n, m)\
+        err(n, \"number\", \"expected '\" .. m .. \"' of second operand to be a number, got \" .. type(n))\
+    end\
+    local checkNumber = function(n)\
+        err(n, \"number\", \"expected second operand to be a number, got \" .. type(n))\
+    end\
+\
+    -- Checks operand values for errors.\
+    checkValue[2] = function(o)\
+        checkVector(o, 2)\
+        checkField(o.x, 'x')\
+        checkField(o.y, 'y')\
+    end\
+    checkValue[3] = function(o)\
+        checkVector(o, 3)\
+        checkField(o.x, 'x')\
+        checkField(o.y, 'y')\
+        checkField(o.z, 'z')\
+    end\
+    checkValue[4] = function(o)\
+        checkVector(o, 4)\
+        checkField(o.x, 'x')\
+        checkField(o.y, 'y')\
+        checkField(o.z, 'z')\
+        checkField(o.w, 'w')\
+    end\
+\
+    -- Adds two vectors together.\
+    vectors[2].add = function(self, o)\
+        checkValue[2](o)\
+        return vect.new(\
+            self.x + o.x,\
+            self.y + o.y\
+        )\
+    end\
+    vectors[3].add = function(self, o)\
+        checkValue[3](o)\
+        return vect.new(\
+            self.x + o.x,\
+            self.y + o.y,\
+            self.z + o.z\
+        )\
+    end\
+    vectors[4].add = function(self, o)\
+        checkValue[4](o)\
+        return vect.new(\
+            self.x + o.x,\
+            self.y + o.y,\
+            self.z + o.z,\
+            self.w + o.w\
+        )\
+    end\
+\
+    -- Subtracts one vector from another.\
+    vectors[2].sub = function(self, o)\
+        checkValue[2](o)\
+        return vect.new(\
+            self.x - o.x,\
+            self.y - o.y\
+        )\
+    end\
+    vectors[3].sub = function(self, o)\
+        checkValue[3](o)\
+        return vect.new(\
+            self.x - o.x,\
+            self.y - o.y,\
+            self.z - o.z\
+        )\
+    end\
+    vectors[4].sub = function(self, o)\
+        checkValue[4](o)\
+        return vect.new(\
+            self.x - o.x,\
+            self.y - o.y,\
+            self.z - o.z,\
+            self.w - o.w\
+        )\
+    end\
+\
+    -- Multiplies a vector by a scalar value.\
+    vectors[2].mul = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x * n,\
+            self.y * n\
+        )\
+    end\
+    vectors[3].mul = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x * n,\
+            self.y * n,\
+            self.z * n\
+        )\
+    end\
+    vectors[4].mul = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x * n,\
+            self.y * n,\
+            self.z * n,\
+            self.w * n\
+        )\
+    end\
+\
+    -- Divides a vector by a scalar value.\
+    vectors[2].div = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x / n,\
+            self.y / n\
+        )\
+    end\
+    vectors[3].div = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x / n,\
+            self.y / n,\
+            self.z / n\
+        )\
+    end\
+    vectors[4].div = function(self, n)\
+        checkNumber(n)\
+        return vect.new(\
+            self.x / n,\
+            self.y / n,\
+            self.z / n,\
+            self.w / n\
+        )\
+    end\
+\
+    -- Negates a vector.\
+    vectors[2].unm = function(self)\
+        return vect.new(\
+            -self.x,\
+            -self.y\
+        )\
+    end\
+    vectors[3].unm = function(self)\
+        return vect.new(\
+            -self.x,\
+            -self.y,\
+            -self.z\
+        )\
+    end\
+    vectors[4].unm = function(self)\
+        return vect.new(\
+            -self.x,\
+            -self.y,\
+            -self.z,\
+            -self.w\
+        )\
+    end\
+\
+    -- Computes the dot product of two vectors.\
+    vectors[2].dot = function(self, o)\
+        checkValue[2](o)\
+        return self.x * o.x + self.y * o.y\
+    end\
+    vectors[3].dot = function(self, o)\
+        checkValue[3](o)\
+        return self.x * o.x + self.y * o.y + self.z * o.z\
+    end\
+    vectors[4].dot = function(self, o)\
+        checkValue[4](o)\
+        return self.x * o.x + self.y * o.y + self.z * o.z + self.w * o.w\
+    end\
+\
+    -- Computes the cross product of two vectors.\
+    vectors[2].cross = function(self, o)\
+        checkValue[2](o)\
+        return vect.new(0, 0)\
+    end\
+    vectors[3].cross = function(self, o)\
+        checkValue[3](o)\
+        return vect.new(\
+            self.y * o.z - self.z * o.y,\
+            self.z * o.x - self.x * o.z,\
+            self.x * o.y - self.y * o.x\
+        )\
+    end\
+    vectors[4].cross = function(self, o)\
+        checkValue[4](o)\
+        local v = vectors[3].cross(self, o)\
+        return vect.new(v.x, v.y, v.z, 0)\
+    end\
+\
+    -- Get the length (also called magnitude) of a vector.\
+    vectors[2].length = function(self)\
+        return math.sqrt(self.x ^ 2 + self.y ^ 2)\
+    end\
+    vectors[3].length = function(self)\
+        return math.sqrt(self.x ^ 2 + self.y ^ 2 + self.z ^ 2)\
+    end\
+    vectors[4].length = function(self)\
+        return math.sqrt(self.x ^ 2 + self.y ^ 2 + self.z ^ 2 + self.w ^ 2)\
+    end\
+\
+    -- Computes a vector with the same direction, but of length 1.\
+    vectors[2].normalize = function(self) return self:mul(1 / self:length()) end\
+    vectors[3].normalize = function(self) return self:mul(1 / self:length()) end\
+    vectors[4].normalize = function(self) return self:mul(1 / self:length()) end\
+\
+    -- Construct a vector with each dimension rounded to the nearest value.\
+    vectors[2].round = function(self, t)\
+        t = tonumber(t) or 1\
+        return vect.new(\
+            math.floor((self.x + t * 0.5) / t) * t,\
+            math.floor((self.y + t * 0.5) / t) * t\
+        )\
+    end\
+    vectors[3].round = function(self, t)\
+        t = tonumber(t) or 1\
+        return vect.new(\
+            math.floor((self.x + t * 0.5) / t) * t,\
+            math.floor((self.y + t * 0.5) / t) * t,\
+            math.floor((self.z + t * 0.5) / t) * t\
+        )\
+    end\
+    vectors[4].round = function(self, t)\
+        t = tonumber(t) or 1\
+        return vect.new(\
+            math.floor((self.x + t * 0.5) / t) * t,\
+            math.floor((self.y + t * 0.5) / t) * t,\
+            math.floor((self.z + t * 0.5) / t) * t,\
+            math.floor((self.w + t * 0.5) / t) * t\
+        )\
+    end\
+\
+    -- Converts a vector into a string, for pretty printing.\
+    vectors[2].tostring = function(self)\
+        return self.x .. \",\" .. self.y\
+    end\
+    vectors[3].tostring = function(self)\
+        return self.x .. \",\" .. self.y .. \",\" .. self.z\
+    end\
+    vectors[4].tostring = function(self)\
+        return self.x .. \",\" .. self.y .. \",\" .. self.z .. \",\" .. self.w\
+    end\
+\
+    -- Checks for equality between two vectors.\
+    vectors[2].eq = function(self, o)\
+        checkValue[2](o)\
+        return self.x == o.x and self.y == o.y\
+    end\
+    vectors[3].eq = function(self, o)\
+        checkValue[3](o)\
+        return self.x == o.x and self.y == o.y and self.z == o.z\
+    end\
+    vectors[4].eq = function(self, o)\
+        checkValue[4](o)\
+        return self.x == o.x and self.y == o.y and self.z == o.z and self.w == o.w\
+    end\
+\
+    vect.new = function(x, y, z, w)\
+        x, y, z, w = tonumber(x) or 0, tonumber(y) or 0, tonumber(z), tonumber(w)\
+        local dim = 3\
+\
+        if z == nil then dim = dim - 1\
+        elseif w ~= nil then dim = dim + 1\
+        end\
+\
+        local main = vectors[dim]\
+\
+        return setmetatable({x = x, y = y, z = z, w = w}, {\
+            __index = main,\
+            __add = main.add,\
+            __sub = main.sub,\
+            __mul = main.mul,\
+            __div = main.div,\
+            __unm = main.unm,\
+            __tostring = main.tostring,\
+            __eq = main.eq\
+        })\
+    end\
+\
+    return {\
+        new = vect.new\
+    }\
+end)()\
+\
+--[[ The smallest time that the 'sleep' function works is 1/20th of a second.\
+That means programs can technically only work in 20 frames per second.\
+However, stuff can be printed to the screen faster than that if the 'sleep'\
+function is removed, but ComputerCraft programs can only go a little over 6\
+seconds without sleeping before it throws the 'Too long without yielding' error.\
+This 'wait' function is my first solution to that problem.\
+\
+This works like the sleep function, but instead of time, it counts ticks. It can\
+even output a frame rate higher than what you would naturally see on your real\
+world monitor, but it's not really meant to do that. Setting a tick rate that's\
+too high will result in errors as detailed below.\
+\
+Use 'wait(n)' with a number argument to loop 'n' ticks per second.\
+? This function will calculate and return the 'fps' value.\
+? 20 is the default value for 'n' if no argument is given.\
+? Enter 1-20 to sleep for '1/n' amount of time. You can also enter decimals\
+  between 0 and 1 or fractions to sleep for longer than 1 second.\
+? Enter a number above 20 to set a tick rate faster than 20. Currently this is\
+  restricted to multiples of 20. This may be fixed in a future update.\
+? Entering 0 will throw an out of range error.\
+? Entering a value that is too high may result in the following:\
+  ? You will get the 'Too long without yielding' error.\
+  ? You will get calculation errors with 'fps' and 'frameTime'.\
+  ? Your tick rate will become extremely unstable.\
+  ? You will experience input lag.\
+  ? Peformance varies depending on the speed of your real world CPU.\
+\
+Additional values can also be returned from this function's methods.\
+? 'wait(n)' or 'wait.fps()' will return the current ticks per second.\
+? 'wait.ticks()' will return the total number of ticks counted by the function.\
+? 'wait.startTime()' will return the 'os.clock()' time that the program started.\
+? 'wait.programClock()' will return the time since the program started.\
+? 'wait.frameTime(real)' will return one of two values:\
+  ? If 'real' is true or not nil, it will return the average time for 1 tick.\
+  ? If 'real' is false or nil, it will return the same average time rounded to\
+    the nearest 1/20th of a second to adhere to ComputerCraft's timing system.\
+\
+The best way to use this function is with the parallel API.\
+? Put 'wait(n)' and whatever else you want to run with it inside an infinite\
+  loop inside a function.\
+? Add your created function to 'parallel.waitForAny' with another function\
+  that's taking user input and/or any other function you want to run with set\
+  tick rates.\
+\
+Run either of these programs for a proof of concept:\
+https://pastebin.com/5pgLdX2D\
+https://pastebin.com/U8DGAmie\
+]]\
+wait = (function()\
+    local ticks = 0\
+    local startTime = os.clock()\
+    local frames = {os.clock()}\
+    local fps = 0\
+\
+    return setmetatable({\
+        ticks = function() return ticks end,\
+        frameTime = function(real)\
+            local time = os.clock()-frames[1]\
+            if real then return time / fps\
+            else return math.round(time / fps * 20) / 20 end\
+        end,\
+        startTime = function() return startTime end,\
+        programClock = function() return os.clock() - startTime end,\
+        fps = function() return fps end\
+    }, {\
+        __call = function(self, n)\
+            n = tonumber(n) or 20\
+            if n <= 0 then error(\"Value out of range, must be greater than 0\", 2) end\
+            ticks = ticks + 1\
+            frames[#frames+1] = os.clock()\
+            if n <= 20 then\
+                sleep(1/n)\
+            elseif ticks%math.round(n/20) == 0 then\
+                sleep(0.05)\
+            end\
+            while os.clock()-frames[1] > 1 and #frames > 1 do\
+                table.remove(frames, 1)\
+            end\
+            fps =  #frames / (os.clock() - frames[1]) - (math.floor(n/20)-1)\
+            return fps\
+        end\
+    })\
+end)()\
+\
+-- Check if a specific value is equal to any of multile values.\
+OR = function(val, ...)\
+    local returnCode = false\
+    for _, v in ipairs({...}) do\
+        returnCode = returnCode or v == val\
+    end\
+    return returnCode\
+end\
+\
+-- Check if a specific value is equal to all of multiple values.\
+AND = function(val, ...)\
+    local returnCode = true\
+    for _, v in ipairs({...}) do\
+        returnCode = returnCode and v == val\
+    end\
+    return returnCode\
+end\
+\
+-- Check if a number is between two numbers, inclusive or non-inclusive.\
+isBetween = function(val, low, high, inclusive)\
+    expect.expect(1, val, \"string\", \"number\")\
+    expect.expect(2, low, \"string\", \"number\")\
+    expect.expect(3, high, \"string\", \"number\")\
+    expect.expect(4, inclusive, \"nil\", \"boolean\")\
+    if inclusive then return val >= low and val <= high\
+    else return val > low and val < high end\
+end\
+\
+-- Freezes the program to check values for bug testing.\
+-- The program will resume when any key is pressed.\
+bugCheck = function(x, y, s)\
+    local oldX, oldY = term.getCursorPos()\
+    term.setCursorPos(x, y)\
+    term.setBackgroundColor(colors.black)\
+    term.setTextColor(colors.red)\
+    write(s)\
+    os.pullEvent(\"key\")\
+    term.setCursorPos(oldX, oldY)\
+end\
+\
+--[[ Changelog\
+    The changelog has been moved to its own file: https://pastebin.com/2cK0DcBk\
+]]",
+    },
+  },
+  name = "telepaint",
+  aliases = {{"telepaint","telepaint.lua"}},
+}
