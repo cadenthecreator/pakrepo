@@ -1,0 +1,32 @@
+{
+  files = {
+    [ "streaming.lua" ] = "local lib = {}\
+\
+function lib.createstream(modem,port)\
+    local stream = {port=port,modem=modem}\
+    modem.open(port)\
+    function stream.close(self)\
+        self.modem.close(self.port)\
+    end\
+    \
+    function stream.read(self)\
+        local event, side, channel, replyChannel, message, distance\
+        repeat\
+            event, side, channel, replyChannel, message, distance = os.pullEvent(\"modem_message\")\
+            sleep()\
+        until channel == self.port\
+        return message\
+    end\
+    \
+    function stream.write(self,data)\
+        self.modem.transmit(self.port,self.port,data)\
+    end\
+    \
+    return stream\
+end\
+return lib\
+",
+  },
+  name = "streaming",
+  aliases = {},
+}
